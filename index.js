@@ -1,6 +1,7 @@
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import addressParse from "address-parse";
 
 const app = express();
 app.use(express.json());
@@ -61,45 +62,16 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- ROBUST ADDRESS PARSER (FINAL) -------- */
-    let rawAddress = extract("Physical Address")
-      .replace(/RDAPT/i, "RD APT")
-      .replace(/\s+/g, " ")
-      .trim();
+    /* -------- ADDRESS PARSING (LIBRARY-BASED) -------- */
+    const rawAddress = extract("Physical Address");
 
-    let addr1 = "";
-    let addr2 = "";
-    let city = "";
-    let state = "";
-    let zip = "";
+    const parsedAddress = addressParse(rawAddress || "");
 
-    // Example:
-    // 2251 S FORT APACHE RD APT 1120 LAS VEGAS, NV 89117
-    if (rawAddress) {
-      const stateZip = rawAddress.match(/,\s*([A-Z]{2})\s+(\d{5})$/);
-      if (stateZip) {
-        state = stateZip[1];
-        zip = stateZip[2];
-
-        const beforeState = rawAddress.replace(/,\s*[A-Z]{2}\s+\d{5}$/, "").trim();
-
-        // City is last two words before comma (LAS VEGAS)
-        const tokens = beforeState.split(" ");
-        city = tokens.splice(-2).join(" ").trim();
-
-        const streetAndApt = tokens.join(" ").trim();
-
-        const aptMatch = streetAndApt.match(/^(.*?)(?:\s+(APT|STE|UNIT)\s+(.+))?$/i);
-        if (aptMatch) {
-          addr1 = aptMatch[1].trim();
-          addr2 = aptMatch[2] ? `${aptMatch[2]} ${aptMatch[3]}` : "";
-        } else {
-          addr1 = streetAndApt;
-        }
-      } else {
-        addr1 = rawAddress;
-      }
-    }
+    const addr1 = parsedAddress.street || "";
+    const addr2 = parsedAddress.secondary || "";
+    const city = parsedAddress.city || "";
+    const state = parsedAddress.state || "";
+    const zip = parsedAddress.zip || "";
 
     /* -------- BUILD PREFILL PARAMS (JOTFORM FIELD IDS) -------- */
     const params = new URLSearchParams({
@@ -111,7 +83,7 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // Jotform Address field (input_17)
+      // ✅ Jotform Address (input_17)
       "input_17_addr_line1": addr1,
       "input_17_addr_line2": addr2,
       "input_17_city": city,
