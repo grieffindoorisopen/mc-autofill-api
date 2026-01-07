@@ -1,9 +1,13 @@
 import express from "express";
 import axios from "axios";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 const app = express();
 app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.send("MC Autofill API is running");
+});
 
 app.post("/jotform/mc-lookup", async (req, res) => {
   try {
@@ -20,12 +24,13 @@ app.post("/jotform/mc-lookup", async (req, res) => {
 
     const response = await axios.get(url, { timeout: 8000 });
     const html = response.data;
+
     const $ = cheerio.load(html);
 
     const extract = (label) =>
       $(`td:contains("${label}")`).next().text().trim();
 
-    res.json({
+    return res.json({
       usdot: extract("USDOT Number"),
       legal_name: extract("Legal Name"),
       dba: extract("DBA Name"),
@@ -36,11 +41,12 @@ app.post("/jotform/mc-lookup", async (req, res) => {
       drivers: extract("Drivers")
     });
   } catch (err) {
-    res.status(500).json({ error: "Lookup failed" });
+    console.error(err);
+    return res.status(500).json({ error: "Lookup failed" });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`MC Autofill API running on port ${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log(`MC Autofill API running on port ${PORT}`);
+});
