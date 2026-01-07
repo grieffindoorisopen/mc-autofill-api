@@ -5,16 +5,19 @@ import * as cheerio from "cheerio";
 const app = express();
 app.use(express.json());
 
-// Health check
+const FORM_ID = "260056446155051";
+
+/* ---------------- HEALTH CHECK ---------------- */
 app.get("/", (req, res) => {
   res.send("MC Autofill API is running");
 });
 
-app.post("/jotform/mc-lookup", async (req, res) => {
+/* ---------------- PREFILL REDIRECT ENDPOINT ---------------- */
+app.get("/prefill", async (req, res) => {
   try {
-    const mc = req.body.mc_number;
+    const mc = req.query.mc;
     if (!mc) {
-      return res.status(400).json({ error: "MC number missing" });
+      return res.send("MC number missing");
     }
 
     const url =
@@ -36,7 +39,6 @@ app.post("/jotform/mc-lookup", async (req, res) => {
 
     const $ = cheerio.load(response.data);
 
-    // SAFER table extractor: <th>LABEL</th><td>VALUE</td>
     const extract = (label) => {
       const th = $("th")
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
@@ -47,33 +49,41 @@ app.post("/jotform/mc-lookup", async (req, res) => {
         : "";
     };
 
-    const data = {
-      legal_name: extract("Legal Name"),
+    let legalName = extract("Legal Name");
+    if (legalName) {
+      legalName = legalName.replace(/\b(USDOT|MC).*$/i, "").trim();
+    }
+
+    let authorityStatus = extract("Operating Authority Status");
+    if (authorityStatus) {
+      authorityStatus = authorityStatus
+        .replace(/For Licensing.*$/i, "")
+        .trim();
+    }
+
+    const params = new URLSearchParams({
+      mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
+      legal_name: legalName,
       usdot: extract("USDOT Number"),
-      mc_number: extract("MC/MX/FF Number(s)") || mc,
-      authority_status: extract("Operating Authority Status") || "ACTIVE",
+      authority_status: authorityStatus,
       office_phone: extract("Phone"),
       physical_address: extract("Physical Address"),
       mailing_address: extract("Mailing Address"),
       power_units: extract("Power Units"),
       drivers: extract("Drivers")
-    };
+    });
 
-    // ✅ CLEANUP: remove accidental USDOT text from legal name
-    if (data.legal_name) {
-      data.legal_name = data.legal_name
-        .replace(/USDOT.*/i, "")
-        .trim();
-    }
+    const redirectUrl = `https://form.jotform.com/${FORM_ID}?${params.toString()}`;
 
-    return res.json(data);
+    return res.redirect(redirectUrl);
 
-  } catch (error) {
-    console.error("MC lookup failed:", error.message);
-    return res.status(500).json({ error: "Lookup failed" });
+  } catch (err) {
+    console.error("Prefill failed:", err.message);
+    return res.send("Failed to fetch carrier data");
   }
 });
 
+/* ---------------- START SERVER ---------------- */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`MC Autofill API running on port ${PORT}`);
