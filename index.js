@@ -25,11 +25,10 @@ const STATE_MAP = {
 };
 
 /* ---------- HELPERS ---------- */
-const clean = (val = "") =>
-  val
-    .replace(/\u00A0/g, " ")   // non-breaking space
-    .replace(/\s+/g, " ")     // multiple spaces
-    .trim();
+const clean = (v = "") =>
+  v.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+
+const enc = (v = "") => encodeURIComponent(clean(v));
 
 /* ---------- HEALTH ---------- */
 app.get("/", (req, res) => {
@@ -65,13 +64,11 @@ app.get("/prefill", async (req, res) => {
       const th = $("th")
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
         .first();
-      return th.length
-        ? clean(th.next("td").text())
-        : "";
+      return th.length ? clean(th.next("td").text()) : "";
     };
 
     const legalName = clean(
-      extract("Legal Name").replace(/\b(USDOT|MC).*$+/i, "")
+      extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
     );
 
     const authorityStatus = clean(
@@ -116,25 +113,23 @@ app.get("/prefill", async (req, res) => {
       street = clean(street.slice(0, street.length - city.length));
     }
 
-    /* ---------- PREFILL PARAMS ---------- */
-    const params = new URLSearchParams({
-      mc_number: formattedMc,
-      legal_name: legalName,
-      usdot: extract("USDOT Number"),
-      authority_status: authorityStatus,
-      office_phone: extract("Phone"),
-      power_units: extract("Power Units"),
-      drivers: extract("Drivers"),
-
-      "physical_address[addr_line1]": street,
-      "physical_address[city]": city,
-      "physical_address[state]": state,
-      "physical_address[postal]": zip,
-      "physical_address[country]": "United States"
-    });
+    /* ---------- BUILD QUERY MANUALLY (NO + EVER) ---------- */
+    const query =
+      `mc_number=${enc(formattedMc)}` +
+      `&legal_name=${enc(legalName)}` +
+      `&usdot=${enc(extract("USDOT Number"))}` +
+      `&authority_status=${enc(authorityStatus)}` +
+      `&office_phone=${enc(extract("Phone"))}` +
+      `&power_units=${enc(extract("Power Units"))}` +
+      `&drivers=${enc(extract("Drivers"))}` +
+      `&physical_address[addr_line1]=${enc(street)}` +
+      `&physical_address[city]=${enc(city)}` +
+      `&physical_address[state]=${enc(state)}` +
+      `&physical_address[postal]=${enc(zip)}` +
+      `&physical_address[country]=United%20States`;
 
     return res.redirect(
-      `https://form.jotform.com/${FORM_ID}?${params.toString()}`
+      `https://form.jotform.com/${FORM_ID}?${query}`
     );
 
   } catch (err) {
