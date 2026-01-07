@@ -5,16 +5,14 @@ import * as cheerio from "cheerio";
 const app = express();
 app.use(express.json());
 
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
   res.send("MC Autofill API is running");
 });
 
 app.post("/jotform/mc-lookup", async (req, res) => {
   try {
     const mc = req.body.mc_number;
-    if (!mc) {
-      return res.status(400).json({ error: "MC number missing" });
-    }
+    if (!mc) return res.status(400).json({ error: "MC number missing" });
 
     const url =
       "https://safer.fmcsa.dot.gov/query.asp" +
@@ -28,20 +26,22 @@ app.post("/jotform/mc-lookup", async (req, res) => {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          "(KHTML, like Gecko) Chrome/120 Safari/537.36"
       }
     });
 
     const $ = cheerio.load(response.data);
 
-    // Exact SAFER table extractor
+    // ✅ SAFER-CORRECT extractor: <th>LABEL</th><td>VALUE</td>
     const extract = (label) => {
-      const cell = $("td")
-        .filter((_, el) => $(el).text().trim() === label)
+      const th = $("th")
+        .filter((_, el) =>
+          $(el).text().replace(":", "").trim() === label
+        )
         .first();
 
-      return cell.length
-        ? cell.next("td").text().replace(/\s+/g, " ").trim()
+      return th.length
+        ? th.next("td").text().replace(/\s+/g, " ").trim()
         : "";
     };
 
@@ -67,6 +67,6 @@ app.post("/jotform/mc-lookup", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`MC Autofill API running on port ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`MC Autofill API running on port ${PORT}`)
+);
