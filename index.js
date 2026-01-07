@@ -7,7 +7,7 @@ app.use(express.json());
 
 const FORM_ID = "260056446155051";
 
-/* ---------- STATE MAP (FOR JOTFORM DROPDOWN) ---------- */
+/* ---------- STATE MAP ---------- */
 const STATE_MAP = {
   AL:"Alabama", AK:"Alaska", AZ:"Arizona", AR:"Arkansas",
   CA:"California", CO:"Colorado", CT:"Connecticut", DE:"Delaware",
@@ -24,23 +24,29 @@ const STATE_MAP = {
   WA:"Washington", WV:"West Virginia", WI:"Wisconsin", WY:"Wyoming"
 };
 
-/* ---------- HEALTH CHECK ---------- */
+/* ---------- HELPERS ---------- */
+const clean = (val = "") =>
+  val
+    .replace(/\u00A0/g, " ")   // non-breaking space
+    .replace(/\s+/g, " ")     // multiple spaces
+    .trim();
+
+/* ---------- HEALTH ---------- */
 app.get("/", (req, res) => {
   res.send("MC Autofill API running");
 });
 
-/* ---------- PREFILL ENDPOINT ---------- */
+/* ---------- PREFILL ---------- */
 app.get("/prefill", async (req, res) => {
   try {
     const mc = req.query.mc;
     if (!mc) return res.send("MC missing");
 
-    /* ---------- FORMAT MC FOR DISPLAY ---------- */
     const formattedMc = mc.toUpperCase().startsWith("MC")
       ? mc.toUpperCase()
       : `MC-${mc}`;
 
-    /* ---------- SAFER REQUEST ---------- */
+    /* ---------- SAFER ---------- */
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
@@ -60,22 +66,22 @@ app.get("/prefill", async (req, res) => {
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
         .first();
       return th.length
-        ? th.next("td").text().replace(/\s+/g, " ").trim()
+        ? clean(th.next("td").text())
         : "";
     };
 
-    const legalName = extract("Legal Name")
-      .replace(/\b(USDOT|MC).*$/i, "")
-      .trim();
+    const legalName = clean(
+      extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
+    );
 
-    const authorityStatus = extract("Operating Authority Status")
-      .replace(/For Licensing.*$/i, "")
-      .trim();
+    const authorityStatus = clean(
+      extract("Operating Authority Status").replace(/For Licensing.*$/i, "")
+    );
 
     const rawAddress = extract("Physical Address");
     if (!rawAddress) return res.send("No address from SAFER");
 
-    /* ---------- US CENSUS GEOCODER ---------- */
+    /* ---------- US CENSUS ---------- */
     const censusResp = await axios.get(
       "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
       {
@@ -93,32 +99,26 @@ app.get("/prefill", async (req, res) => {
 
     const comp = match.addressComponents || {};
 
-    /* ---------- CITY (ROBUST) ---------- */
-    const city =
+    const city = clean(
       comp.place ||
       comp.city ||
       comp.town ||
       comp.municipality ||
       comp.countySubdivision ||
-      "";
+      ""
+    );
 
-    /* ---------- STATE (FULL NAME FOR DROPDOWN) ---------- */
-    const stateCode = comp.state || "";
-    const state = STATE_MAP[stateCode] || "";
-
+    const state = STATE_MAP[comp.state] || "";
     const zip = comp.zip || "";
 
-    /* ---------- STREET ---------- */
-    let street = match.matchedAddress.split(",")[0].trim();
+    let street = clean(match.matchedAddress.split(",")[0]);
     if (city && street.toUpperCase().endsWith(city.toUpperCase())) {
-      street = street.slice(0, street.length - city.length).trim();
+      street = clean(street.slice(0, street.length - city.length));
     }
 
-    /* ---------- BUILD PREFILL PARAMS ---------- */
+    /* ---------- PREFILL PARAMS ---------- */
     const params = new URLSearchParams({
-      // ✅ MC NUMBER FILLED BACK INTO FORM
       mc_number: formattedMc,
-
       legal_name: legalName,
       usdot: extract("USDOT Number"),
       authority_status: authorityStatus,
@@ -126,7 +126,6 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // ✅ ADDRESS (ALL REQUIRED SUBFIELDS)
       "physical_address[addr_line1]": street,
       "physical_address[city]": city,
       "physical_address[state]": state,
@@ -134,7 +133,6 @@ app.get("/prefill", async (req, res) => {
       "physical_address[country]": "United States"
     });
 
-    /* ---------- REDIRECT BACK TO FORM ---------- */
     return res.redirect(
       `https://form.jotform.com/${FORM_ID}?${params.toString()}`
     );
@@ -145,8 +143,7 @@ app.get("/prefill", async (req, res) => {
   }
 });
 
-/* ---------- START SERVER ---------- */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`MC Autofill API running on port ${PORT}`);
+/* ---------- START ---------- */
+app.listen(process.env.PORT || 3000, () => {
+  console.log("MC Autofill API running");
 });
