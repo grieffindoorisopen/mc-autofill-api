@@ -18,7 +18,7 @@ app.get("/prefill", async (req, res) => {
     const mc = req.query.mc;
     if (!mc) return res.send("MC missing");
 
-    /* -------- SAFER -------- */
+    /* ---------- SAFER ---------- */
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
@@ -37,45 +37,59 @@ app.get("/prefill", async (req, res) => {
       const th = $("th")
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
         .first();
-      return th.length ? th.next("td").text().replace(/\s+/g," ").trim() : "";
+      return th.length
+        ? th.next("td").text().replace(/\s+/g, " ").trim()
+        : "";
     };
 
-    const legalName = extract("Legal Name").replace(/\b(USDOT|MC).*$/i,"").trim();
+    const legalName = extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "").trim();
     const authorityStatus = extract("Operating Authority Status")
-      .replace(/For Licensing.*$/i,"").trim();
+      .replace(/For Licensing.*$/i, "")
+      .trim();
 
     const rawAddress = extract("Physical Address");
+    if (!rawAddress) return res.send("No address from SAFER");
 
-    if (!rawAddress) {
-      return res.send("Address missing from SAFER");
-    }
-
-    /* -------- US CENSUS GEOCODER -------- */
-    const censusUrl =
-      "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
-
-    const censusResp = await axios.get(censusUrl, {
-      params: {
-        address: rawAddress,
-        benchmark: "Public_AR_Current",
-        format: "json"
-      },
-      timeout: 15000
-    });
+    /* ---------- US CENSUS GEOCODER ---------- */
+    const censusResp = await axios.get(
+      "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
+      {
+        params: {
+          address: rawAddress,
+          benchmark: "Public_AR_Current",
+          format: "json"
+        },
+        timeout: 15000
+      }
+    );
 
     const match = censusResp.data?.result?.addressMatches?.[0];
-    if (!match) {
-      return res.send("Census geocoding failed");
-    }
+    if (!match) return res.send("Census geocode failed");
 
-    const comp = match.addressComponents;
+    const comp = match.addressComponents || {};
 
-    const street = match.matchedAddress.split(",")[0].trim();
-    const city = comp.city || "";
+    /* ---------- CITY (ROBUST) ---------- */
+    const city =
+      comp.city ||
+      comp.town ||
+      comp.municipality ||
+      comp.placeName ||
+      "";
+
     const state = comp.state || "";
     const zip = comp.zip || "";
 
-    /* -------- PREFILL -------- */
+    /* ---------- STREET (CLEAN) ---------- */
+    let street = match.matchedAddress.split(",")[0].trim();
+
+    // Remove city if Census leaked it into line 1
+    if (city && street.toUpperCase().endsWith(city.toUpperCase())) {
+      street = street
+        .substring(0, street.length - city.length)
+        .trim();
+    }
+
+    /* ---------- PREFILL ---------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
