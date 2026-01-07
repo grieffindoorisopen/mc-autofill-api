@@ -17,58 +17,45 @@ app.post("/jotform/mc-lookup", async (req, res) => {
     }
 
     const url =
-      "https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY" +
+      "https://safer.fmcsa.dot.gov/query.asp" +
+      "?searchtype=ANY" +
       "&query_type=queryCarrierSnapshot" +
       "&query_param=MC_MX" +
       "&query_string=" + mc;
 
     const response = await axios.get(url, {
-      timeout: 10000,
+      timeout: 15000,
       headers: {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       }
     });
 
-    const html = response.data;
-    const $ = cheerio.load(html);
+    const $ = cheerio.load(response.data);
 
-    // Normalize full visible text
-    const text = $("body")
-      .text()
-      .replace(/\u00a0/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    // Exact SAFER table extractor
+    const extract = (label) => {
+      const cell = $("td")
+        .filter((_, el) => $(el).text().trim() === label)
+        .first();
 
-    // --- Extractors ---
-    const usdotMatch = text.match(/USDOT Number\s*:?[\s#]*(\d+)/i);
-    const mcMatch = text.match(/MC\/MX Number\s*:?[\s#]*(\d+)/i);
-
-    // Legal name is usually the FIRST all-caps company name after "Company Snapshot"
-    let legalName = "";
-    const snapshotIndex = text.indexOf("Company Snapshot");
-    if (snapshotIndex !== -1) {
-      const afterSnapshot = text.slice(snapshotIndex + 16);
-      const possibleName = afterSnapshot.match(/[A-Z][A-Z0-9 .,&'-]{3,}/);
-      if (possibleName) legalName = possibleName[0].trim();
-    }
-
-    // Fallback: first ALL CAPS phrase with LLC / INC
-    if (!legalName) {
-      const fallback = text.match(/[A-Z][A-Z0-9 .,&'-]+(LLC|INC|CORP|LTD)/);
-      if (fallback) legalName = fallback[0].trim();
-    }
+      return cell.length
+        ? cell.next("td").text().replace(/\s+/g, " ").trim()
+        : "";
+    };
 
     const data = {
-      legal_name: legalName,
-      usdot: usdotMatch ? usdotMatch[1] : "",
-      mc_number: mcMatch ? mcMatch[1] : mc,
-      authority_status: text.includes("ACTIVE") ? "ACTIVE" : "",
-      office_phone:
-        (text.match(/Phone\s*:?[\s]*(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i) || [])[1] || "",
-      power_units:
-        (text.match(/Power Units\s*:?[\s]*(\d+)/i) || [])[1] || "",
-      drivers:
-        (text.match(/Drivers\s*:?[\s]*(\d+)/i) || [])[1] || ""
+      usdot: extract("USDOT Number"),
+      legal_name: extract("Legal Name"),
+      dba: extract("DBA Name"),
+      authority_status: extract("Operating Authority Status"),
+      office_phone: extract("Phone"),
+      physical_address: extract("Physical Address"),
+      mailing_address: extract("Mailing Address"),
+      power_units: extract("Power Units"),
+      drivers: extract("Drivers"),
+      mc_number: extract("MC/MX/FF Number(s)") || mc
     };
 
     return res.json(data);
