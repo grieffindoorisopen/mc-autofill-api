@@ -7,7 +7,7 @@ app.use(express.json());
 
 const FORM_ID = "260056446155051";
 
-/* ---------- STATE MAP ---------- */
+/* ---------- STATE MAP (FOR JOTFORM DROPDOWN) ---------- */
 const STATE_MAP = {
   AL:"Alabama", AK:"Alaska", AZ:"Arizona", AR:"Arkansas",
   CA:"California", CO:"Colorado", CT:"Connecticut", DE:"Delaware",
@@ -30,26 +30,38 @@ const clean = (v = "") =>
 
 const enc = (v = "") => encodeURIComponent(clean(v));
 
-/* ---------- HEALTH ---------- */
+/* ---------- HEALTH CHECK ---------- */
 app.get("/", (req, res) => {
   res.send("MC Autofill API running");
 });
 
-/* ---------- PREFILL ---------- */
+/* ---------- PREFILL ENDPOINT ---------- */
 app.get("/prefill", async (req, res) => {
   try {
-    /* ---------- NORMALIZE MC ---------- */
-    const rawMc = req.query.mc;
-    if (!rawMc) return res.send("MC missing");
+    /* =====================================================
+       1. PULL MC FROM INPUT (THIS IS THE KEY PART)
+       ===================================================== */
 
-    // Extract numeric MC only (SAFER REQUIREMENT)
+    const rawMc = req.query.mc; // comes from {mc_number}
+
+    if (!rawMc) {
+      return res.send("MC number missing");
+    }
+
+    // Strip everything except digits → SAFER requires numeric MC
     const numericMc = rawMc.replace(/[^0-9]/g, "");
-    if (!numericMc) return res.send("Invalid MC");
 
-    // Formatted MC for display
+    if (!numericMc) {
+      return res.send("Invalid MC number");
+    }
+
+    // Format MC for display back into Jotform
     const formattedMc = `MC-${numericMc}`;
 
-    /* ---------- SAFER LOOKUP (NUMERIC ONLY) ---------- */
+    /* =====================================================
+       2. SAFER LOOKUP (NUMERIC MC ONLY)
+       ===================================================== */
+
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
@@ -71,7 +83,6 @@ app.get("/prefill", async (req, res) => {
       return th.length ? clean(th.next("td").text()) : "";
     };
 
-    /* ---------- BASIC DATA ---------- */
     const legalName = clean(
       extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
     );
@@ -81,9 +92,14 @@ app.get("/prefill", async (req, res) => {
     );
 
     const rawAddress = extract("Physical Address");
-    if (!rawAddress) return res.send("No address from SAFER");
+    if (!rawAddress) {
+      return res.send("No address found for MC");
+    }
 
-    /* ---------- US CENSUS ---------- */
+    /* =====================================================
+       3. US CENSUS GEOCODER (TIGER DATA)
+       ===================================================== */
+
     const censusResp = await axios.get(
       "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
       {
@@ -97,7 +113,9 @@ app.get("/prefill", async (req, res) => {
     );
 
     const match = censusResp.data?.result?.addressMatches?.[0];
-    if (!match) return res.send("Census geocode failed");
+    if (!match) {
+      return res.send("Address geocoding failed");
+    }
 
     const comp = match.addressComponents || {};
 
@@ -118,7 +136,10 @@ app.get("/prefill", async (req, res) => {
       street = clean(street.slice(0, street.length - city.length));
     }
 
-    /* ---------- BUILD QUERY (NO +, NO FAILURES) ---------- */
+    /* =====================================================
+       4. REDIRECT BACK TO JOTFORM WITH PREFILL
+       ===================================================== */
+
     const query =
       `mc_number=${enc(formattedMc)}` +
       `&legal_name=${enc(legalName)}` +
@@ -133,7 +154,6 @@ app.get("/prefill", async (req, res) => {
       `&physical_address[postal]=${enc(zip)}` +
       `&physical_address[country]=United%20States`;
 
-    /* ---------- REDIRECT BACK TO FORM ---------- */
     return res.redirect(
       `https://form.jotform.com/${FORM_ID}?${query}`
     );
@@ -144,7 +164,8 @@ app.get("/prefill", async (req, res) => {
   }
 });
 
-/* ---------- START ---------- */
-app.listen(process.env.PORT || 3000, () => {
-  console.log("MC Autofill API running");
+/* ---------- START SERVER ---------- */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`MC Autofill API running on port ${PORT}`);
 });
