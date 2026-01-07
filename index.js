@@ -68,25 +68,24 @@ app.get("/prefill", async (req, res) => {
 
     const comp = match.addressComponents || {};
 
-    /* ---------- CITY (ROBUST) ---------- */
+    /* ---------- CITY (FINAL, ROBUST) ---------- */
     const city =
+      comp.place ||
       comp.city ||
       comp.town ||
       comp.municipality ||
-      comp.placeName ||
+      comp.countySubdivision ||
       "";
 
     const state = comp.state || "";
     const zip = comp.zip || "";
 
-    /* ---------- STREET (CLEAN) ---------- */
+    /* ---------- STREET ---------- */
     let street = match.matchedAddress.split(",")[0].trim();
 
-    // Remove city if Census leaked it into line 1
+    // Remove city leak if present
     if (city && street.toUpperCase().endsWith(city.toUpperCase())) {
-      street = street
-        .substring(0, street.length - city.length)
-        .trim();
+      street = street.slice(0, street.length - city.length).trim();
     }
 
     /* ---------- PREFILL ---------- */
