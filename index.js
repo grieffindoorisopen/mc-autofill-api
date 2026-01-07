@@ -12,7 +12,7 @@ app.get("/", (req, res) => {
   res.send("MC Autofill API is running");
 });
 
-/* ---------------- PREFILL REDIRECT ENDPOINT ---------------- */
+/* ---------------- PREFILL REDIRECT ---------------- */
 app.get("/prefill", async (req, res) => {
   try {
     const mc = req.query.mc;
@@ -39,6 +39,7 @@ app.get("/prefill", async (req, res) => {
 
     const $ = cheerio.load(response.data);
 
+    /* -------- SAFER TABLE EXTRACTOR -------- */
     const extract = (label) => {
       const th = $("th")
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
@@ -49,6 +50,7 @@ app.get("/prefill", async (req, res) => {
         : "";
     };
 
+    /* -------- CLEAN BASIC FIELDS -------- */
     let legalName = extract("Legal Name");
     if (legalName) {
       legalName = legalName.replace(/\b(USDOT|MC).*$/i, "").trim();
@@ -61,20 +63,51 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
+    /* -------- SPLIT PHYSICAL ADDRESS -------- */
+    const rawAddress = extract("Physical Address");
+
+    let addr1 = "";
+    let addr2 = "";
+    let city = "";
+    let state = "";
+    let zip = "";
+
+    if (rawAddress) {
+      const match = rawAddress.match(
+        /(.*?)(?:\s+(APT|STE|UNIT)\s+(\S+))?\s+([^,]+),\s+([A-Z]{2})\s+(\d{5})/i
+      );
+
+      if (match) {
+        addr1 = match[1].trim();
+        addr2 = match[2] ? `${match[2]} ${match[3]}` : "";
+        city = match[4].trim();
+        state = match[5];
+        zip = match[6];
+      } else {
+        addr1 = rawAddress;
+      }
+    }
+
+    /* -------- BUILD PREFILL PARAMS -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
       usdot: extract("USDOT Number"),
       authority_status: authorityStatus,
       office_phone: extract("Phone"),
-      physical_address: extract("Physical Address"),
-      mailing_address: extract("Mailing Address"),
       power_units: extract("Power Units"),
-      drivers: extract("Drivers")
+      drivers: extract("Drivers"),
+
+      // Jotform Address sub-fields
+      "physical_address[addr_line1]": addr1,
+      "physical_address[addr_line2]": addr2,
+      "physical_address[city]": city,
+      "physical_address[state]": state,
+      "physical_address[postal]": zip,
+      "physical_address[country]": "United States"
     });
 
     const redirectUrl = `https://form.jotform.com/${FORM_ID}?${params.toString()}`;
-
     return res.redirect(redirectUrl);
 
   } catch (err) {
