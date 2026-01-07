@@ -16,9 +16,7 @@ app.get("/", (req, res) => {
 app.get("/prefill", async (req, res) => {
   try {
     const mc = req.query.mc;
-    if (!mc) {
-      return res.send("MC number missing");
-    }
+    if (!mc) return res.send("MC number missing");
 
     const url =
       "https://safer.fmcsa.dot.gov/query.asp" +
@@ -50,7 +48,7 @@ app.get("/prefill", async (req, res) => {
         : "";
     };
 
-    /* -------- CLEAN BASIC FIELDS -------- */
+    /* -------- BASIC FIELD CLEANUP -------- */
     let legalName = extract("Legal Name");
     if (legalName) {
       legalName = legalName.replace(/\b(USDOT|MC).*$/i, "").trim();
@@ -63,7 +61,7 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- SPLIT + NORMALIZE PHYSICAL ADDRESS -------- */
+    /* -------- ROBUST ADDRESS PARSER (FINAL) -------- */
     let rawAddress = extract("Physical Address")
       .replace(/RDAPT/i, "RD APT")
       .replace(/\s+/g, " ")
@@ -75,23 +73,35 @@ app.get("/prefill", async (req, res) => {
     let state = "";
     let zip = "";
 
+    // Example:
+    // 2251 S FORT APACHE RD APT 1120 LAS VEGAS, NV 89117
     if (rawAddress) {
-      const match = rawAddress.match(
-        /^(.*?)(?:\s+(APT|STE|UNIT)\s+(\S+))?\s+([^,]+),\s+([A-Z]{2})\s+(\d{5})$/i
-      );
+      const stateZip = rawAddress.match(/,\s*([A-Z]{2})\s+(\d{5})$/);
+      if (stateZip) {
+        state = stateZip[1];
+        zip = stateZip[2];
 
-      if (match) {
-        addr1 = match[1].trim();
-        addr2 = match[2] ? `${match[2]} ${match[3]}` : "";
-        city = match[4].trim();
-        state = match[5];
-        zip = match[6];
+        const beforeState = rawAddress.replace(/,\s*[A-Z]{2}\s+\d{5}$/, "").trim();
+
+        // City is last two words before comma (LAS VEGAS)
+        const tokens = beforeState.split(" ");
+        city = tokens.splice(-2).join(" ").trim();
+
+        const streetAndApt = tokens.join(" ").trim();
+
+        const aptMatch = streetAndApt.match(/^(.*?)(?:\s+(APT|STE|UNIT)\s+(.+))?$/i);
+        if (aptMatch) {
+          addr1 = aptMatch[1].trim();
+          addr2 = aptMatch[2] ? `${aptMatch[2]} ${aptMatch[3]}` : "";
+        } else {
+          addr1 = streetAndApt;
+        }
       } else {
         addr1 = rawAddress;
       }
     }
 
-    /* -------- BUILD PREFILL PARAMS (USING FIELD IDS) -------- */
+    /* -------- BUILD PREFILL PARAMS (JOTFORM FIELD IDS) -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -101,7 +111,7 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // ✅ JOTFORM ADDRESS — MUST USE INPUT ID
+      // Jotform Address field (input_17)
       "input_17_addr_line1": addr1,
       "input_17_addr_line2": addr2,
       "input_17_city": city,
