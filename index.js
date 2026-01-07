@@ -38,20 +38,24 @@ app.get("/", (req, res) => {
 /* ---------- PREFILL ---------- */
 app.get("/prefill", async (req, res) => {
   try {
-    const mc = req.query.mc;
-    if (!mc) return res.send("MC missing");
+    /* ---------- NORMALIZE MC ---------- */
+    const rawMc = req.query.mc;
+    if (!rawMc) return res.send("MC missing");
 
-    const formattedMc = mc.toUpperCase().startsWith("MC")
-      ? mc.toUpperCase()
-      : `MC-${mc}`;
+    // Extract numeric MC only (SAFER REQUIREMENT)
+    const numericMc = rawMc.replace(/[^0-9]/g, "");
+    if (!numericMc) return res.send("Invalid MC");
 
-    /* ---------- SAFER ---------- */
+    // Formatted MC for display
+    const formattedMc = `MC-${numericMc}`;
+
+    /* ---------- SAFER LOOKUP (NUMERIC ONLY) ---------- */
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
       "&query_type=queryCarrierSnapshot" +
       "&query_param=MC_MX" +
-      "&query_string=" + mc;
+      "&query_string=" + numericMc;
 
     const saferResp = await axios.get(saferUrl, {
       timeout: 15000,
@@ -67,6 +71,7 @@ app.get("/prefill", async (req, res) => {
       return th.length ? clean(th.next("td").text()) : "";
     };
 
+    /* ---------- BASIC DATA ---------- */
     const legalName = clean(
       extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
     );
@@ -113,7 +118,7 @@ app.get("/prefill", async (req, res) => {
       street = clean(street.slice(0, street.length - city.length));
     }
 
-    /* ---------- BUILD QUERY MANUALLY (NO + EVER) ---------- */
+    /* ---------- BUILD QUERY (NO +, NO FAILURES) ---------- */
     const query =
       `mc_number=${enc(formattedMc)}` +
       `&legal_name=${enc(legalName)}` +
@@ -128,6 +133,7 @@ app.get("/prefill", async (req, res) => {
       `&physical_address[postal]=${enc(zip)}` +
       `&physical_address[country]=United%20States`;
 
+    /* ---------- REDIRECT BACK TO FORM ---------- */
     return res.redirect(
       `https://form.jotform.com/${FORM_ID}?${query}`
     );
