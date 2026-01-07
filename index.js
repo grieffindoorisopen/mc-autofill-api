@@ -1,9 +1,10 @@
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import pkg from "address-parse";
+import { createRequire } from "module";
 
-const { parseLocation } = pkg;
+const require = createRequire(import.meta.url);
+const addressParse = require("address-parse"); // ✅ CORRECT WAY
 
 const app = express();
 app.use(express.json());
@@ -64,10 +65,10 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- ADDRESS PARSING (CORRECT API) -------- */
+    /* -------- ADDRESS PARSING (NOW WORKS) -------- */
     const rawAddress = extract("Physical Address");
 
-    const parsed = rawAddress ? parseLocation(rawAddress) : {};
+    const parsed = rawAddress ? addressParse.parseLocation(rawAddress) : {};
 
     const addr1 = [parsed.number, parsed.street].filter(Boolean).join(" ");
     const addr2 = parsed.sec_unit_type
@@ -78,7 +79,7 @@ app.get("/prefill", async (req, res) => {
     const state = parsed.state || "";
     const zip = parsed.zip || "";
 
-    /* -------- PREFILL PARAMS (JOTFORM FIELD IDS) -------- */
+    /* -------- PREFILL PARAMS -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -88,7 +89,6 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // Address (input_17)
       "input_17_addr_line1": addr1,
       "input_17_addr_line2": addr2,
       "input_17_city": city,
@@ -100,7 +100,7 @@ app.get("/prefill", async (req, res) => {
     return res.redirect(redirectUrl);
 
   } catch (err) {
-    console.error("Prefill failed:", err);
+    console.error("🔥 PREFILL ERROR:", err);
     return res.status(500).send("Failed to fetch carrier data");
   }
 });
