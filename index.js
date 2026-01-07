@@ -20,16 +20,12 @@ app.get("/prefill", async (req, res) => {
       return res.status(400).json({ error: "MC number missing" });
     }
 
-    console.log("➡️ Prefill request for MC:", mc);
-
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
       "&query_type=queryCarrierSnapshot" +
       "&query_param=MC_MX" +
       "&query_string=" + mc;
-
-    console.log("🌐 Fetching SAFER URL:", saferUrl);
 
     const response = await axios.get(saferUrl, {
       timeout: 15000,
@@ -41,8 +37,6 @@ app.get("/prefill", async (req, res) => {
       }
     });
 
-    console.log("✅ SAFER response received");
-
     const $ = cheerio.load(response.data);
 
     /* -------- SAFER TABLE EXTRACTOR -------- */
@@ -51,15 +45,12 @@ app.get("/prefill", async (req, res) => {
         .filter((_, el) => $(el).text().replace(":", "").trim() === label)
         .first();
 
-      const value = th.length
+      return th.length
         ? th.next("td").text().replace(/\s+/g, " ").trim()
         : "";
-
-      console.log(`📌 ${label}:`, value);
-      return value;
     };
 
-    /* -------- BASIC FIELD CLEANUP -------- */
+    /* -------- BASIC FIELDS -------- */
     let legalName = extract("Legal Name");
     if (legalName) {
       legalName = legalName.replace(/\b(USDOT|MC).*$/i, "").trim();
@@ -72,18 +63,47 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
+    /* -------- ADDRESS (SAFE & JOTFORM-COMPATIBLE) -------- */
     const rawAddress = extract("Physical Address");
 
-    console.log("🏠 Raw Address:", rawAddress);
+    let street = "";
+    let unit = "";
+    let city = "";
+    let state = "";
+    let zip = "";
 
-    /* -------- TEMPORARY ADDRESS HANDLING (NO PARSING) -------- */
-    const addr1 = rawAddress || "";
-    const addr2 = "";
-    const city = "";
-    const state = "";
-    const zip = "";
+    if (rawAddress) {
+      // Example:
+      // 2251 S FORT APACHE RD APT 1120 LAS VEGAS, NV 89117
 
-    /* -------- BUILD PREFILL PARAMS -------- */
+      // Split state + zip
+      const stateZipMatch = rawAddress.match(/,\s*([A-Z]{2})\s+(\d{5})$/);
+      if (stateZipMatch) {
+        state = stateZipMatch[1];
+        zip = stateZipMatch[2];
+
+        const beforeState = rawAddress.replace(/,\s*[A-Z]{2}\s+\d{5}$/, "").trim();
+
+        // City = last word(s) before comma (LAS VEGAS)
+        const parts = beforeState.split(" ");
+        city = parts.splice(-2).join(" ");
+
+        const streetPart = parts.join(" ");
+
+        // Unit
+        const unitMatch = streetPart.match(/(.*)\s+(APT|STE|UNIT)\s+(.+)/i);
+        if (unitMatch) {
+          street = unitMatch[1].trim();
+          unit = `${unitMatch[2]} ${unitMatch[3]}`;
+        } else {
+          street = streetPart.trim();
+        }
+      } else {
+        street = rawAddress;
+      }
+    }
+
+    /* -------- PREFILL PARAMS (FIELD IDs) -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -93,9 +113,9 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // Address (input_17)
-      "input_17_addr_line1": addr1,
-      "input_17_addr_line2": addr2,
+      // ✅ Address field (input_17)
+      "input_17_addr_line1": street,
+      "input_17_addr_line2": unit,
       "input_17_city": city,
       "input_17_state": state,
       "input_17_postal": zip
@@ -104,14 +124,10 @@ app.get("/prefill", async (req, res) => {
     const redirectUrl =
       `https://form.jotform.com/${FORM_ID}?` + params.toString();
 
-    console.log("➡️ Redirecting to:", redirectUrl);
-
     return res.redirect(redirectUrl);
 
   } catch (err) {
-    console.error("🔥 PREFILL ERROR STACK:");
-    console.error(err?.stack || err);
-
+    console.error("🔥 PREFILL ERROR:", err);
     return res.status(500).json({
       error: "Prefill failed",
       message: err?.message || String(err)
