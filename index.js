@@ -116,7 +116,7 @@ app.get("/prefill", async (req, res) => {
     /* ===== 4. REDIRECT WITH PREFILL ===== */
     const query =
       `mc_number=${enc(formattedMc)}` +
-      `&mc_authority=${enc(formattedMc)}` +   // ✅ pulled from mc_number
+      `&mc_authority=${enc(numericMc)}` +   // ✅ pulled from mc_number
       `&legal_name=${enc(legalName)}` +
       `&usdot=${enc(extract("USDOT Number"))}` +
       `&office_phone=${enc(extract("Phone"))}` +
