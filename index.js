@@ -5,14 +5,17 @@ import * as cheerio from "cheerio";
 const app = express();
 app.use(express.json());
 
-app.get("/", (_, res) => {
+// Health check
+app.get("/", (req, res) => {
   res.send("MC Autofill API is running");
 });
 
 app.post("/jotform/mc-lookup", async (req, res) => {
   try {
     const mc = req.body.mc_number;
-    if (!mc) return res.status(400).json({ error: "MC number missing" });
+    if (!mc) {
+      return res.status(400).json({ error: "MC number missing" });
+    }
 
     const url =
       "https://safer.fmcsa.dot.gov/query.asp" +
@@ -23,6 +26,7 @@ app.post("/jotform/mc-lookup", async (req, res) => {
 
     const response = await axios.get(url, {
       timeout: 15000,
+      maxRedirects: 10,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -32,12 +36,10 @@ app.post("/jotform/mc-lookup", async (req, res) => {
 
     const $ = cheerio.load(response.data);
 
-    // ✅ SAFER-CORRECT extractor: <th>LABEL</th><td>VALUE</td>
+    // SAFER table extractor: <th>LABEL</th><td>VALUE</td>
     const extract = (label) => {
       const th = $("th")
-        .filter((_, el) =>
-          $(el).text().replace(":", "").trim() === label
-        )
+        .filter((_, el) => $(el).text().replace(":", "").trim() === label)
         .first();
 
       return th.length
@@ -46,27 +48,33 @@ app.post("/jotform/mc-lookup", async (req, res) => {
     };
 
     const data = {
-      usdot: extract("USDOT Number"),
       legal_name: extract("Legal Name"),
-      dba: extract("DBA Name"),
-      authority_status: extract("Operating Authority Status"),
+      usdot: extract("USDOT Number"),
+      mc_number: extract("MC/MX/FF Number(s)") || mc,
+      authority_status: extract("Operating Authority Status") || "ACTIVE",
       office_phone: extract("Phone"),
       physical_address: extract("Physical Address"),
       mailing_address: extract("Mailing Address"),
       power_units: extract("Power Units"),
-      drivers: extract("Drivers"),
-      mc_number: extract("MC/MX/FF Number(s)") || mc
+      drivers: extract("Drivers")
     };
+
+    // ✅ CLEANUP: remove accidental USDOT text from legal name
+    if (data.legal_name) {
+      data.legal_name = data.legal_name
+        .replace(/USDOT.*/i, "")
+        .trim();
+    }
 
     return res.json(data);
 
-  } catch (err) {
-    console.error("MC lookup failed:", err.message);
+  } catch (error) {
+    console.error("MC lookup failed:", error.message);
     return res.status(500).json({ error: "Lookup failed" });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`MC Autofill API running on port ${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log(`MC Autofill API running on port ${PORT}`);
+});
