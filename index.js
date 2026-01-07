@@ -5,10 +5,12 @@ import * as cheerio from "cheerio";
 const app = express();
 app.use(express.json());
 
+// Health check
 app.get("/", (req, res) => {
   res.send("MC Autofill API is running");
 });
 
+// MC lookup endpoint
 app.post("/jotform/mc-lookup", async (req, res) => {
   try {
     const mc = req.body.mc_number;
@@ -22,15 +24,22 @@ app.post("/jotform/mc-lookup", async (req, res) => {
       "&query_param=MC_MX" +
       "&query_string=" + mc;
 
-    const response = await axios.get(url, { timeout: 8000 });
+    const response = await axios.get(url, { timeout: 10000 });
     const html = response.data;
-
     const $ = cheerio.load(html);
 
-    const extract = (label) =>
-      $(`td:contains("${label}")`).next().text().trim();
+    // SAFER-safe extractor
+    const extract = (label) => {
+      const td = $(`td`)
+        .filter((_, el) => $(el).text().trim() === label)
+        .first();
 
-    return res.json({
+      return td.length
+        ? td.next("td").text().replace(/\s+/g, " ").trim()
+        : "";
+    };
+
+    const data = {
       usdot: extract("USDOT Number"),
       legal_name: extract("Legal Name"),
       dba: extract("DBA Name"),
@@ -39,9 +48,12 @@ app.post("/jotform/mc-lookup", async (req, res) => {
       physical_address: extract("Physical Address"),
       power_units: extract("Power Units"),
       drivers: extract("Drivers")
-    });
-  } catch (err) {
-    console.error(err);
+    };
+
+    return res.json(data);
+
+  } catch (error) {
+    console.error("MC lookup failed:", error.message);
     return res.status(500).json({ error: "Lookup failed" });
   }
 });
