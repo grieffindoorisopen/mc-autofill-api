@@ -1,7 +1,9 @@
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import addressParse from "address-parse";
+import * as addressParseLib from "address-parse";
+
+const addressParse = addressParseLib.addressParse;
 
 const app = express();
 app.use(express.json());
@@ -62,10 +64,10 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- ADDRESS PARSING (LIBRARY-BASED) -------- */
+    /* -------- ADDRESS PARSING (LIBRARY-BASED, SAFE) -------- */
     const rawAddress = extract("Physical Address");
 
-    const parsedAddress = addressParse(rawAddress || "");
+    const parsedAddress = rawAddress ? addressParse(rawAddress) : {};
 
     const addr1 = parsedAddress.street || "";
     const addr2 = parsedAddress.secondary || "";
@@ -83,7 +85,7 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // ✅ Jotform Address (input_17)
+      // Jotform Address field (input_17)
       "input_17_addr_line1": addr1,
       "input_17_addr_line2": addr2,
       "input_17_city": city,
@@ -95,7 +97,7 @@ app.get("/prefill", async (req, res) => {
     return res.redirect(redirectUrl);
 
   } catch (err) {
-    console.error("Prefill failed:", err.message);
+    console.error("Prefill failed:", err);
     return res.send("Failed to fetch carrier data");
   }
 });
