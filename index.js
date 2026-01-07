@@ -28,7 +28,13 @@ const STATE_MAP = {
 const clean = (v = "") =>
   v.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
 
-const enc = (v = "") => encodeURIComponent(clean(v));
+const enc = (v = "") => encodeURIComponent(v);
+
+/* 🔑 TITLE CASE HELPER */
+const toTitleCase = (str = "") =>
+  clean(str)
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase());
 
 /* ---------- HEALTH ---------- */
 app.get("/", (req, res) => {
@@ -42,11 +48,10 @@ app.get("/prefill", async (req, res) => {
     const rawMc = req.query.mc;
     if (!rawMc) return res.send("MC number missing");
 
-    // 🔑 ALWAYS numeric MC
     const numericMc = rawMc.replace(/[^0-9]/g, "");
     if (!numericMc) return res.send("Invalid MC number");
 
-    /* ===== 2. SAFER LOOKUP (NUMERIC ONLY) ===== */
+    /* ===== 2. SAFER LOOKUP ===== */
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
@@ -68,7 +73,8 @@ app.get("/prefill", async (req, res) => {
       return th.length ? clean(th.next("td").text()) : "";
     };
 
-    const legalName = clean(
+    /* ===== TEXT FIELDS (TITLE CASE) ===== */
+    const legalName = toTitleCase(
       extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
     );
 
@@ -93,7 +99,7 @@ app.get("/prefill", async (req, res) => {
 
     const comp = match.addressComponents || {};
 
-    const city = clean(
+    const city = toTitleCase(
       comp.place ||
       comp.city ||
       comp.town ||
@@ -105,12 +111,14 @@ app.get("/prefill", async (req, res) => {
     const state = STATE_MAP[comp.state] || "";
     const zip = comp.zip || "";
 
-    let street = clean(match.matchedAddress.split(",")[0]);
+    let street = toTitleCase(match.matchedAddress.split(",")[0]);
     if (city && street.toUpperCase().endsWith(city.toUpperCase())) {
-      street = clean(street.slice(0, street.length - city.length));
+      street = toTitleCase(
+        street.slice(0, street.length - city.length)
+      );
     }
 
-    /* ===== 4. REDIRECT WITH PREFILL (NUMERIC MC ONLY) ===== */
+    /* ===== 4. REDIRECT WITH PREFILL ===== */
     const query =
       `mc_number=${enc(numericMc)}` +
       `&mc_authority=${enc(numericMc)}` +
