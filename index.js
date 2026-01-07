@@ -7,6 +7,23 @@ app.use(express.json());
 
 const FORM_ID = "260056446155051";
 
+/* ---------------- STATE MAP (REQUIRED FOR JOTFORM DROPDOWN) ---------------- */
+const STATE_MAP = {
+  AL:"Alabama", AK:"Alaska", AZ:"Arizona", AR:"Arkansas",
+  CA:"California", CO:"Colorado", CT:"Connecticut", DE:"Delaware",
+  FL:"Florida", GA:"Georgia", HI:"Hawaii", ID:"Idaho",
+  IL:"Illinois", IN:"Indiana", IA:"Iowa", KS:"Kansas",
+  KY:"Kentucky", LA:"Louisiana", ME:"Maine", MD:"Maryland",
+  MA:"Massachusetts", MI:"Michigan", MN:"Minnesota", MS:"Mississippi",
+  MO:"Missouri", MT:"Montana", NE:"Nebraska", NV:"Nevada",
+  NH:"New Hampshire", NJ:"New Jersey", NM:"New Mexico", NY:"New York",
+  NC:"North Carolina", ND:"North Dakota", OH:"Ohio", OK:"Oklahoma",
+  OR:"Oregon", PA:"Pennsylvania", RI:"Rhode Island",
+  SC:"South Carolina", SD:"South Dakota", TN:"Tennessee",
+  TX:"Texas", UT:"Utah", VT:"Vermont", VA:"Virginia",
+  WA:"Washington", WV:"West Virginia", WI:"Wisconsin", WY:"Wyoming"
+};
+
 /* ---------------- HEALTH ---------------- */
 app.get("/", (req, res) => {
   res.send("MC Autofill API running");
@@ -42,9 +59,9 @@ app.get("/prefill", async (req, res) => {
         : "";
     };
 
-    const legalName = extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "").trim();
+    const legalName = extract("Legal Name").replace(/\b(USDOT|MC).*$/i,"").trim();
     const authorityStatus = extract("Operating Authority Status")
-      .replace(/For Licensing.*$/i, "")
+      .replace(/For Licensing.*$/i,"")
       .trim();
 
     const rawAddress = extract("Physical Address");
@@ -68,7 +85,7 @@ app.get("/prefill", async (req, res) => {
 
     const comp = match.addressComponents || {};
 
-    /* ---------- CITY (FINAL, ROBUST) ---------- */
+    /* ---------- CITY (ROBUST) ---------- */
     const city =
       comp.place ||
       comp.city ||
@@ -77,13 +94,14 @@ app.get("/prefill", async (req, res) => {
       comp.countySubdivision ||
       "";
 
-    const state = comp.state || "";
+    /* ---------- STATE (FULL NAME FOR JOTFORM) ---------- */
+    const stateCode = comp.state || "";
+    const state = STATE_MAP[stateCode] || "";
+
     const zip = comp.zip || "";
 
     /* ---------- STREET ---------- */
     let street = match.matchedAddress.split(",")[0].trim();
-
-    // Remove city leak if present
     if (city && street.toUpperCase().endsWith(city.toUpperCase())) {
       street = street.slice(0, street.length - city.length).trim();
     }
