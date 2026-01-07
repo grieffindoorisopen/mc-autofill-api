@@ -17,7 +17,7 @@ app.get("/prefill", async (req, res) => {
   try {
     const mc = req.query.mc;
     if (!mc) {
-      return res.status(400).json({ error: "MC number missing" });
+      return res.status(400).send("MC number missing");
     }
 
     const saferUrl =
@@ -63,9 +63,8 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- ADDRESS (SAFE & JOTFORM-COMPATIBLE) -------- */
+    /* -------- ADDRESS (SIMPLE & SAFE) -------- */
     const rawAddress = extract("Physical Address");
-
     let street = "";
     let unit = "";
     let city = "";
@@ -73,24 +72,18 @@ app.get("/prefill", async (req, res) => {
     let zip = "";
 
     if (rawAddress) {
-      // Example:
       // 2251 S FORT APACHE RD APT 1120 LAS VEGAS, NV 89117
+      const m = rawAddress.match(/^(.*?),\s*([A-Z]{2})\s+(\d{5})$/);
+      if (m) {
+        state = m[2];
+        zip = m[3];
 
-      // Split state + zip
-      const stateZipMatch = rawAddress.match(/,\s*([A-Z]{2})\s+(\d{5})$/);
-      if (stateZipMatch) {
-        state = stateZipMatch[1];
-        zip = stateZipMatch[2];
+        const before = m[1];
+        const parts = before.split(" ");
 
-        const beforeState = rawAddress.replace(/,\s*[A-Z]{2}\s+\d{5}$/, "").trim();
-
-        // City = last word(s) before comma (LAS VEGAS)
-        const parts = beforeState.split(" ");
         city = parts.splice(-2).join(" ");
-
         const streetPart = parts.join(" ");
 
-        // Unit
         const unitMatch = streetPart.match(/(.*)\s+(APT|STE|UNIT)\s+(.+)/i);
         if (unitMatch) {
           street = unitMatch[1].trim();
@@ -98,12 +91,10 @@ app.get("/prefill", async (req, res) => {
         } else {
           street = streetPart.trim();
         }
-      } else {
-        street = rawAddress;
       }
     }
 
-    /* -------- PREFILL PARAMS (FIELD IDs) -------- */
+    /* -------- PREFILL PARAMS (CORRECT JOTFORM FORMAT) -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -113,12 +104,12 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // ✅ Address field (input_17)
-      "input_17_addr_line1": street,
-      "input_17_addr_line2": unit,
-      "input_17_city": city,
-      "input_17_state": state,
-      "input_17_postal": zip
+      // ✅ ADDRESS — THIS IS THE FIX
+      "physical_address[addr_line1]": street,
+      "physical_address[addr_line2]": unit,
+      "physical_address[city]": city,
+      "physical_address[state]": state,
+      "physical_address[postal]": zip
     });
 
     const redirectUrl =
@@ -128,10 +119,7 @@ app.get("/prefill", async (req, res) => {
 
   } catch (err) {
     console.error("🔥 PREFILL ERROR:", err);
-    return res.status(500).json({
-      error: "Prefill failed",
-      message: err?.message || String(err)
-    });
+    return res.status(500).send("Failed to fetch carrier data");
   }
 });
 
