@@ -71,7 +71,7 @@ app.get("/prefill", async (req, res) => {
     };
 
     const legalName = clean(
-      extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
+      extract("Legal Name").replace(/\b(USDOT|MC).*$+/i, "")
     );
 
     const authorityStatus = clean(
