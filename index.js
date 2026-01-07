@@ -63,8 +63,11 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- SPLIT PHYSICAL ADDRESS -------- */
-    const rawAddress = extract("Physical Address");
+    /* -------- SPLIT + NORMALIZE PHYSICAL ADDRESS -------- */
+    let rawAddress = extract("Physical Address")
+      .replace(/RDAPT/i, "RD APT")
+      .replace(/\s+/g, " ")
+      .trim();
 
     let addr1 = "";
     let addr2 = "";
@@ -74,7 +77,7 @@ app.get("/prefill", async (req, res) => {
 
     if (rawAddress) {
       const match = rawAddress.match(
-        /(.*?)(?:\s+(APT|STE|UNIT)\s+(\S+))?\s+([^,]+),\s+([A-Z]{2})\s+(\d{5})/i
+        /^(.*?)(?:\s+(APT|STE|UNIT)\s+(\S+))?\s+([^,]+),\s+([A-Z]{2})\s+(\d{5})$/i
       );
 
       if (match) {
@@ -88,7 +91,7 @@ app.get("/prefill", async (req, res) => {
       }
     }
 
-    /* -------- BUILD PREFILL PARAMS -------- */
+    /* -------- BUILD PREFILL PARAMS (USING FIELD IDS) -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -98,13 +101,12 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // Jotform Address sub-fields
-      "physical_address[addr_line1]": addr1,
-      "physical_address[addr_line2]": addr2,
-      "physical_address[city]": city,
-      "physical_address[state]": state,
-      "physical_address[postal]": zip,
-      "physical_address[country]": "United States"
+      // ✅ JOTFORM ADDRESS — MUST USE INPUT ID
+      "input_17_addr_line1": addr1,
+      "input_17_addr_line2": addr2,
+      "input_17_city": city,
+      "input_17_state": state,
+      "input_17_postal": zip
     });
 
     const redirectUrl = `https://form.jotform.com/${FORM_ID}?${params.toString()}`;
