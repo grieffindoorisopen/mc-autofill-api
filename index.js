@@ -42,14 +42,11 @@ app.get("/prefill", async (req, res) => {
     const rawMc = req.query.mc;
     if (!rawMc) return res.send("MC number missing");
 
-    // Numeric MC for SAFER
+    // 🔑 ALWAYS numeric MC
     const numericMc = rawMc.replace(/[^0-9]/g, "");
     if (!numericMc) return res.send("Invalid MC number");
 
-    // Formatted MC for form fields
-    const formattedMc = `MC-${numericMc}`;
-
-    /* ===== 2. SAFER LOOKUP ===== */
+    /* ===== 2. SAFER LOOKUP (NUMERIC ONLY) ===== */
     const saferUrl =
       "https://safer.fmcsa.dot.gov/query.asp" +
       "?searchtype=ANY" +
@@ -113,10 +110,10 @@ app.get("/prefill", async (req, res) => {
       street = clean(street.slice(0, street.length - city.length));
     }
 
-    /* ===== 4. REDIRECT WITH PREFILL ===== */
+    /* ===== 4. REDIRECT WITH PREFILL (NUMERIC MC ONLY) ===== */
     const query =
-      `mc_number=${enc(formattedMc)}` +
-      `&mc_authority=${enc(numericMc)}` +   // ✅ pulled from mc_number
+      `mc_number=${enc(numericMc)}` +
+      `&mc_authority=${enc(numericMc)}` +
       `&legal_name=${enc(legalName)}` +
       `&usdot=${enc(extract("USDOT Number"))}` +
       `&office_phone=${enc(extract("Phone"))}` +
