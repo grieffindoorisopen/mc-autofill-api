@@ -42,9 +42,11 @@ app.get("/prefill", async (req, res) => {
     const rawMc = req.query.mc;
     if (!rawMc) return res.send("MC number missing");
 
+    // Numeric MC for SAFER
     const numericMc = rawMc.replace(/[^0-9]/g, "");
     if (!numericMc) return res.send("Invalid MC number");
 
+    // Formatted MC for form fields
     const formattedMc = `MC-${numericMc}`;
 
     /* ===== 2. SAFER LOOKUP ===== */
@@ -71,12 +73,6 @@ app.get("/prefill", async (req, res) => {
 
     const legalName = clean(
       extract("Legal Name").replace(/\b(USDOT|MC).*$/i, "")
-    );
-
-    /* ===== MC AUTHORITY (THIS IS THE NEW PART) ===== */
-    const mcAuthority = clean(
-      extract("Operating Authority Status")
-        .replace(/For Licensing.*$/i, "")
     );
 
     const rawAddress = extract("Physical Address");
@@ -120,7 +116,7 @@ app.get("/prefill", async (req, res) => {
     /* ===== 4. REDIRECT WITH PREFILL ===== */
     const query =
       `mc_number=${enc(formattedMc)}` +
-      `&mc_authority=${enc(mcAuthority)}` +      // ✅ ADDED
+      `&mc_authority=${enc(formattedMc)}` +   // ✅ pulled from mc_number
       `&legal_name=${enc(legalName)}` +
       `&usdot=${enc(extract("USDOT Number"))}` +
       `&office_phone=${enc(extract("Phone"))}` +
