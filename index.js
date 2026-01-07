@@ -1,9 +1,9 @@
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import * as addressParseLib from "address-parse";
+import pkg from "address-parse";
 
-const addressParse = addressParseLib.addressParse;
+const { parseLocation } = pkg;
 
 const app = express();
 app.use(express.json());
@@ -51,7 +51,7 @@ app.get("/prefill", async (req, res) => {
         : "";
     };
 
-    /* -------- BASIC FIELD CLEANUP -------- */
+    /* -------- BASIC FIELDS -------- */
     let legalName = extract("Legal Name");
     if (legalName) {
       legalName = legalName.replace(/\b(USDOT|MC).*$/i, "").trim();
@@ -64,18 +64,21 @@ app.get("/prefill", async (req, res) => {
         .trim();
     }
 
-    /* -------- ADDRESS PARSING (LIBRARY-BASED, SAFE) -------- */
+    /* -------- ADDRESS PARSING (CORRECT API) -------- */
     const rawAddress = extract("Physical Address");
 
-    const parsedAddress = rawAddress ? addressParse(rawAddress) : {};
+    const parsed = rawAddress ? parseLocation(rawAddress) : {};
 
-    const addr1 = parsedAddress.street || "";
-    const addr2 = parsedAddress.secondary || "";
-    const city = parsedAddress.city || "";
-    const state = parsedAddress.state || "";
-    const zip = parsedAddress.zip || "";
+    const addr1 = [parsed.number, parsed.street].filter(Boolean).join(" ");
+    const addr2 = parsed.sec_unit_type
+      ? `${parsed.sec_unit_type} ${parsed.sec_unit_num || ""}`.trim()
+      : "";
 
-    /* -------- BUILD PREFILL PARAMS (JOTFORM FIELD IDS) -------- */
+    const city = parsed.city || "";
+    const state = parsed.state || "";
+    const zip = parsed.zip || "";
+
+    /* -------- PREFILL PARAMS (JOTFORM FIELD IDS) -------- */
     const params = new URLSearchParams({
       mc_number: extract("MC/MX/FF Number(s)") || `MC-${mc}`,
       legal_name: legalName,
@@ -85,7 +88,7 @@ app.get("/prefill", async (req, res) => {
       power_units: extract("Power Units"),
       drivers: extract("Drivers"),
 
-      // Jotform Address field (input_17)
+      // Address (input_17)
       "input_17_addr_line1": addr1,
       "input_17_addr_line2": addr2,
       "input_17_city": city,
@@ -98,7 +101,7 @@ app.get("/prefill", async (req, res) => {
 
   } catch (err) {
     console.error("Prefill failed:", err);
-    return res.send("Failed to fetch carrier data");
+    return res.status(500).send("Failed to fetch carrier data");
   }
 });
 
